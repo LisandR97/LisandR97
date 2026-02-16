@@ -180,9 +180,12 @@
         // CONFIGURAÇÃO DO TEMPO – sincronizado com UTC (relógio mundial 00)
         const CYCLE_MIN = 1440;                     // 24 horas = 1440 minutos
         const GAME_MIN_PER_REAL_SEC = 0.5;          // 20s real = 10 min jogo → 1s real = 0.5 min jogo
+        const REAL_SEC_PER_GAME_MIN = 2;            // 1 min jogo = 2 s reais
         const OFFSET_STORAGE_KEY = 'redmRelogioOffset';
+        const DISCORD_5MIN_WARNING_REAL = 300;      // avisar quando faltar 5 min (em segundos reais)
 
         let offsetMinutes = 0;                      // correção manual (0 = 00:00 UTC = 00:00 jogo)
+        const discord5MinSent = new Set();          // evita reenviar o mesmo aviso 5 min
 
         let autoUpdateId = null;
         let countdownId = null;
@@ -232,6 +235,7 @@
             document.getElementById('barFill').style.width = `${progress}%`;
 
             checkAllAlarms(gameMinTotal);
+            check5MinDiscordWarnings(gameMinTotal);
 
             if (autoUpdateId) sendDiscordUpdate(`${pad(h)}:${pad(m)} | ${progress}%`);
         }
@@ -425,6 +429,69 @@
                     if (alarmMin >= 0 && floorMin === alarmMin) triggerAlarm(animal);
                 });
             });
+        }
+
+        // Aviso Discord quando faltar 5 min (vida real) para spawn – com todas as características
+        function check5MinDiscordWarnings(currentGameMin) {
+            const url = document.getElementById('webhookUrl').value.trim();
+            if (!url) return;
+            const nowSec = Date.now() / 1000;
+            // Limpar avisos antigos do Set
+            const nowMin = nowSec / 60;
+            for (const key of discord5MinSent) {
+                const parts = key.split('-');
+                const spawnMin = parseInt(parts[parts.length - 1], 10);
+                if (spawnMin < nowMin - 10) discord5MinSent.delete(key);
+            }
+            huntTypes.forEach(ht => {
+                ht.animals.forEach(animal => {
+                    if (animal.hunted) return;
+                    const alarmMin = timeToMinutes(animal.time);
+                    if (alarmMin < 0) return;
+                    const gameMinUntilSpawn = (alarmMin - currentGameMin + CYCLE_MIN) % CYCLE_MIN;
+                    const realSecondsUntilSpawn = gameMinUntilSpawn * REAL_SEC_PER_GAME_MIN;
+                    const nextSpawnRealMin = Math.floor((nowSec + realSecondsUntilSpawn) / 60);
+                    const key = `5min-${animal.name}-${animal.time}-${nextSpawnRealMin}`;
+                    if (realSecondsUntilSpawn > DISCORD_5MIN_WARNING_REAL + 60) return; // já passou ou ainda falta muito
+                    if (realSecondsUntilSpawn <= DISCORD_5MIN_WARNING_REAL && realSecondsUntilSpawn > DISCORD_5MIN_WARNING_REAL - 60) {
+                        if (!discord5MinSent.has(key)) {
+                            discord5MinSent.add(key);
+                            sendDiscordAnimalWarning(animal);
+                        }
+                    }
+                });
+            });
+        }
+
+        async function sendDiscordAnimalWarning(animal) {
+            const url = document.getElementById('webhookUrl').value.trim();
+            if (!url) return;
+            const timeRange = animal.timeEnd ? `${animal.time} – ${animal.timeEnd}` : animal.time;
+            try {
+                await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        embeds: [{
+                            title: "🦌 Aviso: Faltam 5 minutos (vida real) para caçar!",
+                            description: `**${animal.name}** está prestes a aparecer. Preparação com todas as características:`,
+                            color: 0xffaa00,
+                            timestamp: new Date().toISOString(),
+                            fields: [
+                                { name: "Nome", value: animal.name || "—", inline: true },
+                                { name: "Isco", value: animal.isco || "—", inline: true },
+                                { name: "XP", value: animal.xp || "—", inline: true },
+                                { name: "Local", value: animal.local || "—", inline: true },
+                                { name: "Hora início (jogo)", value: animal.time || "—", inline: true },
+                                { name: "Hora fim (jogo)", value: (animal.timeEnd || animal.time) || "—", inline: true }
+                            ],
+                            footer: { text: "RedM Relógio • 5 min antes em tempo real" }
+                        }]
+                    })
+                });
+            } catch (err) {
+                console.warn('Discord aviso 5min:', err);
+            }
         }
 
         function triggerAlarm(animal) {
