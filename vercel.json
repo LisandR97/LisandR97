@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "buildCommand": "cp \"index (1).html\" index.html",
+  "outputDirectory": ".",
+  "framework": null
+}
