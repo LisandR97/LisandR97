@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🕐 RedM Relógio – 20s real = 10 min jogo + Alarmes Lendários</title>
+    <title>🕐 RedM Relógio – 19,5s real = 10 min jogo + Alarmes Lendários</title>
     <style>
         body {
             background: linear-gradient(135deg, #0a001f, #2a0044);
@@ -102,7 +102,7 @@
 </head>
 <body>
     <h1>🕐 RedM Relógio + Alarmes Lendários</h1>
-    <div class="info">20s real = 10 min jogo • 24h jogo = 48 min reais • Sincronizado com UTC (00:00 UTC = 00:00 no jogo)</div>
+    <div class="info">19,5s real = 10 min jogo • 24h jogo ≈ 46,8 min reais • Sincronizado com UTC (00:00 UTC = 00:00 no jogo)</div>
 
     <div class="section">
         <div>Hora atual no jogo:</div>
@@ -179,19 +179,19 @@
     <div class="section">
         <h2>Discord Webhook (opcional)</h2>
         <p style="font-size:0.95em; color:#aaa; margin-bottom:10px;">Só envia aviso quando faltar 5 min (vida real) para os animais que tiveres assinalado em <strong>Aviso 5 min</strong>.</p>
-        <input type="text" id="webhookUrl" placeholder="https://discord.com/api/webhooks/..." style="width:90%; max-width:620px; font-size:1.1em; margin-bottom:10px;">
+        <input type="text" id="webhookUrl" value="https://discord.com/api/webhooks/1472766415894351987/a13fdcFKG4ZzNdCRURzCxmZ_qHbhPnIjXTuQqXmMNFErm3A7ixzg9kJukkbdZLhHjTcr" placeholder="URL do webhook" style="width:90%; max-width:620px; font-size:1.1em; margin-bottom:10px;">
         <br>
         <button class="discord" id="sendTest">Testar Envio</button>
         <div id="discordStatus" style="margin-top:15px; font-size:1.2em; min-height:28px;"></div>
     </div>
 
-    <div id="status" class="success">Relógio iniciado • Nova escala: 20s real = 10 min jogo</div>
+    <div id="status" class="success">Relógio iniciado • 19,5s real = 10 min jogo</div>
 
     <script>
         // CONFIGURAÇÃO DO TEMPO – sincronizado com UTC (relógio mundial 00)
         const CYCLE_MIN = 1440;                     // 24 horas = 1440 minutos
-        const GAME_MIN_PER_REAL_SEC = 0.5;          // 20s real = 10 min jogo → 1s real = 0.5 min jogo
-        const REAL_SEC_PER_GAME_MIN = 2;            // 1 min jogo = 2 s reais
+        const GAME_MIN_PER_REAL_SEC = 10 / 19.5;   // 19.5s real = 10 min jogo
+        const REAL_SEC_PER_GAME_MIN = 19.5 / 10;   // 1 min jogo = 1.95 s reais
         const OFFSET_STORAGE_KEY = 'redmRelogioOffset';
         const FINE_TUNE_STORAGE_KEY = 'redmRelogioFineTune';
         const DISCORD_5MIN_WARNING_REAL = 300;     // avisar quando faltar 5 min (em segundos reais)
@@ -214,7 +214,7 @@
             return h * 60 + m;
         }
 
-        // Hora no jogo a partir de UTC: 00:00 UTC = 00:00 no jogo (escala 20s real = 10 min jogo)
+        // Hora no jogo a partir de UTC: 00:00 UTC = 00:00 no jogo (escala 19.5s real = 10 min jogo)
         function getUtcSecondsSinceMidnight() {
             const d = new Date();
             return d.getUTCHours() * 3600 + d.getUTCMinutes() * 60 + d.getUTCSeconds() + d.getUTCMilliseconds() / 1000;
@@ -563,7 +563,7 @@
                             description: text,
                             color: 0x00ffff,
                             timestamp: new Date().toISOString(),
-                            footer: { text: "20s real = 10 min jogo • Alarmes ativos" }
+                            footer: { text: "19,5s real = 10 min jogo • Alarmes ativos" }
                         }]
                     })
                 });
