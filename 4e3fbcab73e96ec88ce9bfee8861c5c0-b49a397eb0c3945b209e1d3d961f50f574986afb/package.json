@@ -1,0 +1,35 @@
+{
+  "name": "redm-relogio-lendarios",
+  "productName": "RedM Relógio Lendários",
+  "version": "1.0.0",
+  "description": "Relógio para RedM com alarmes para animais lendários",
+  "main": "main.js",
+  "author": "Lisandro",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "build": {
+    "appId": "com.teuusuario.redmrelogio",
+    "productName": "RedM Relógio Lendários",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "files": [
+      "**/*",
+      "!node_modules"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^40.1.0",
+    "electron-builder": "^24.13.3"
+  }
+}
