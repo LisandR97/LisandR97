@@ -102,7 +102,7 @@
 </head>
 <body>
     <h1>🕐 RedM Relógio + Alarmes Lendários</h1>
-    <div class="info">20 segundos reais = 10 minutos no jogo • 24h jogo = 48 minutos reais</div>
+    <div class="info">20s real = 10 min jogo • 24h jogo = 48 min reais • Sincronizado com UTC (00:00 UTC = 00:00 no jogo)</div>
 
     <div class="section">
         <div>Hora atual no jogo:</div>
@@ -177,13 +177,12 @@
     <div id="status" class="success">Relógio iniciado • Nova escala: 20s real = 10 min jogo</div>
 
     <script>
-        // CONFIGURAÇÃO DO TEMPO
+        // CONFIGURAÇÃO DO TEMPO – sincronizado com UTC (relógio mundial 00)
         const CYCLE_MIN = 1440;                     // 24 horas = 1440 minutos
         const GAME_MIN_PER_REAL_SEC = 0.5;          // 20s real = 10 min jogo → 1s real = 0.5 min jogo
-        const CLOCK_STORAGE_KEY = 'redmRelogio';
+        const OFFSET_STORAGE_KEY = 'redmRelogioOffset';
 
-        let startRealSec = Date.now() / 1000;
-        let startGameMin = 1 * 60 + 42;             // valor inicial se não houver nada guardado
+        let offsetMinutes = 0;                      // correção manual (0 = 00:00 UTC = 00:00 jogo)
 
         let autoUpdateId = null;
         let countdownId = null;
@@ -199,35 +198,27 @@
             return h * 60 + m;
         }
 
+        // Hora no jogo a partir de UTC: 00:00 UTC = 00:00 no jogo (escala 20s real = 10 min jogo)
+        function getUtcSecondsSinceMidnight() {
+            const d = new Date();
+            return d.getUTCHours() * 3600 + d.getUTCMinutes() * 60 + d.getUTCSeconds() + d.getUTCMilliseconds() / 1000;
+        }
+
         function getCurrentGameMin() {
-            const now = Date.now() / 1000;
-            const elapsedRealSec = now - startRealSec;
-            return (startGameMin + elapsedRealSec * GAME_MIN_PER_REAL_SEC) % CYCLE_MIN;
+            const utcSec = getUtcSecondsSinceMidnight();
+            const utcGameMin = (utcSec * GAME_MIN_PER_REAL_SEC) % CYCLE_MIN;
+            return (utcGameMin + offsetMinutes + CYCLE_MIN) % CYCLE_MIN;
         }
 
-        function saveClockState() {
+        function loadClockOffset() {
             try {
-                const gameMin = getCurrentGameMin();
-                localStorage.setItem(CLOCK_STORAGE_KEY, JSON.stringify({
-                    gameMin,
-                    realSec: Date.now() / 1000
-                }));
+                const saved = localStorage.getItem(OFFSET_STORAGE_KEY);
+                if (saved !== null) offsetMinutes = parseInt(saved, 10) || 0;
             } catch (e) {}
         }
 
-        function loadClockState() {
-            try {
-                const saved = localStorage.getItem(CLOCK_STORAGE_KEY);
-                if (saved) {
-                    const { gameMin, realSec } = JSON.parse(saved);
-                    const now = Date.now() / 1000;
-                    const elapsed = now - realSec;
-                    startGameMin = (gameMin + elapsed * GAME_MIN_PER_REAL_SEC) % CYCLE_MIN;
-                    startRealSec = now;
-                    return true;
-                }
-            } catch (e) {}
-            return false;
+        function saveClockOffset() {
+            try { localStorage.setItem(OFFSET_STORAGE_KEY, String(offsetMinutes)); } catch (e) {}
         }
 
         function updateClock() {
@@ -254,13 +245,14 @@
             const mm = parseInt(match[2]);
             if (hh > 23 || mm > 59) return showStatus('Hora inválida (00:00–23:59)', 'error');
 
-            const newGameMin = hh * 60 + mm;
-            const now = Date.now() / 1000;
-            const elapsed = now - startRealSec;
-            startGameMin = (newGameMin - elapsed * GAME_MIN_PER_REAL_SEC + CYCLE_MIN) % CYCLE_MIN;
+            const wantedGameMin = hh * 60 + mm;
+            const utcSec = getUtcSecondsSinceMidnight();
+            const utcGameMin = (utcSec * GAME_MIN_PER_REAL_SEC) % CYCLE_MIN;
+            offsetMinutes = (wantedGameMin - utcGameMin + CYCLE_MIN) % CYCLE_MIN;
+            if (offsetMinutes > CYCLE_MIN / 2) offsetMinutes -= CYCLE_MIN;
 
-            saveClockState();
-            showStatus(`Hora ajustada para ${val}`, 'success');
+            saveClockOffset();
+            showStatus(`Hora ajustada para ${val} (correção guardada)`, 'success');
             updateClock();
         }
 
@@ -273,9 +265,8 @@
             const tm = parseInt(match[2]);
             const targetMin = (th * 60 + tm + CYCLE_MIN) % CYCLE_MIN;
 
+            const curGameMin = getCurrentGameMin();
             const now = Date.now() / 1000;
-            const elapsed = now - startRealSec;
-            const curGameMin = (startGameMin + elapsed * GAME_MIN_PER_REAL_SEC) % CYCLE_MIN;
 
             let deltaGameMin = (targetMin - curGameMin + CYCLE_MIN) % CYCLE_MIN;
             const deltaRealSec = deltaGameMin / GAME_MIN_PER_REAL_SEC;
@@ -536,12 +527,11 @@
             updateClock();
         };
 
-        // Início – relógio continua sempre (persiste ao fechar e ao voltar ao separador)
-        loadClockState();
+        // Início – relógio sincronizado com UTC (00:00 UTC = 00:00 no jogo)
+        loadClockOffset();
         loadAnimals();
         Notification.requestPermission();
         setInterval(updateClock, 1000);
-        setInterval(saveClockState, 10000);  // guarda estado a cada 10s
         updateClock();
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') updateClock(); });
     </script>
