@@ -110,8 +110,18 @@
         <div>Progresso do dia: <span id="prog">0.0</span>%</div>
         <div class="bar"><div id="barFill" class="bar-fill" style="width:0%"></div></div>
 
-        <input type="text" id="editTime" value="01:42" placeholder="HH:MM">
-        <button class="primary" id="applyEdit">Aplicar / Corrigir</button>
+        <div style="margin: 12px 0;">
+            <label>Sincronizar: </label>
+            <input type="text" id="editTime" value="01:42" placeholder="HH:MM">
+            <button class="primary" id="applyEdit">Aplicar hora</button>
+        </div>
+        <div style="margin: 8px 0; font-size: 0.95em;">
+            <label>Ajuste fino (minutos): </label>
+            <button type="button" id="fineTuneMinus" title="Atrasar 1 min">−1</button>
+            <span id="fineTuneDisplay" style="min-width:4em; display:inline-block;">0</span>
+            <button type="button" id="fineTunePlus" title="Avançar 1 min">+1</button>
+            <button type="button" id="fineTuneReset" style="margin-left:8px;">Resetar</button>
+        </div>
     </div>
 
     <div class="section">
@@ -156,6 +166,7 @@
                             <th>Hora início</th>
                             <th>Hora fim</th>
                             <th>Caçado?</th>
+                            <th title="Só estes recebem aviso no Discord 5 min antes">Aviso 5 min</th>
                             <th>Ação</th>
                         </tr>
                     </thead>
@@ -167,10 +178,10 @@
 
     <div class="section">
         <h2>Discord Webhook (opcional)</h2>
+        <p style="font-size:0.95em; color:#aaa; margin-bottom:10px;">Só envia aviso quando faltar 5 min (vida real) para os animais que tiveres assinalado em <strong>Aviso 5 min</strong>.</p>
         <input type="text" id="webhookUrl" placeholder="https://discord.com/api/webhooks/..." style="width:90%; max-width:620px; font-size:1.1em; margin-bottom:10px;">
         <br>
         <button class="discord" id="sendTest">Testar Envio</button>
-        <button class="discord" id="toggleAuto">Iniciar Auto-Update (60s)</button>
         <div id="discordStatus" style="margin-top:15px; font-size:1.2em; min-height:28px;"></div>
     </div>
 
@@ -182,9 +193,11 @@
         const GAME_MIN_PER_REAL_SEC = 0.5;          // 20s real = 10 min jogo → 1s real = 0.5 min jogo
         const REAL_SEC_PER_GAME_MIN = 2;            // 1 min jogo = 2 s reais
         const OFFSET_STORAGE_KEY = 'redmRelogioOffset';
-        const DISCORD_5MIN_WARNING_REAL = 300;      // avisar quando faltar 5 min (em segundos reais)
+        const FINE_TUNE_STORAGE_KEY = 'redmRelogioFineTune';
+        const DISCORD_5MIN_WARNING_REAL = 300;     // avisar quando faltar 5 min (em segundos reais)
 
         let offsetMinutes = 0;                      // correção manual (0 = 00:00 UTC = 00:00 jogo)
+        let fineTuneMinutes = 0;                    // ajuste fino ± minutos para sincronizar melhor
         const discord5MinSent = new Set();          // evita reenviar o mesmo aviso 5 min
 
         let autoUpdateId = null;
@@ -210,18 +223,28 @@
         function getCurrentGameMin() {
             const utcSec = getUtcSecondsSinceMidnight();
             const utcGameMin = (utcSec * GAME_MIN_PER_REAL_SEC) % CYCLE_MIN;
-            return (utcGameMin + offsetMinutes + CYCLE_MIN) % CYCLE_MIN;
+            return (utcGameMin + offsetMinutes + fineTuneMinutes + CYCLE_MIN * 2) % CYCLE_MIN;
         }
 
         function loadClockOffset() {
             try {
                 const saved = localStorage.getItem(OFFSET_STORAGE_KEY);
                 if (saved !== null) offsetMinutes = parseInt(saved, 10) || 0;
+                const ft = localStorage.getItem(FINE_TUNE_STORAGE_KEY);
+                if (ft !== null) fineTuneMinutes = parseInt(ft, 10) || 0;
             } catch (e) {}
         }
 
         function saveClockOffset() {
-            try { localStorage.setItem(OFFSET_STORAGE_KEY, String(offsetMinutes)); } catch (e) {}
+            try {
+                localStorage.setItem(OFFSET_STORAGE_KEY, String(offsetMinutes));
+                localStorage.setItem(FINE_TUNE_STORAGE_KEY, String(fineTuneMinutes));
+            } catch (e) {}
+        }
+
+        function updateFineTuneDisplay() {
+            const el = document.getElementById('fineTuneDisplay');
+            if (el) el.textContent = fineTuneMinutes >= 0 ? '+' + fineTuneMinutes : fineTuneMinutes;
         }
 
         function updateClock() {
@@ -236,8 +259,6 @@
 
             checkAllAlarms(gameMinTotal);
             check5MinDiscordWarnings(gameMinTotal);
-
-            if (autoUpdateId) sendDiscordUpdate(`${pad(h)}:${pad(m)} | ${progress}%`);
         }
 
         function applyEdit() {
@@ -256,6 +277,7 @@
             if (offsetMinutes > CYCLE_MIN / 2) offsetMinutes -= CYCLE_MIN;
 
             saveClockOffset();
+            updateFineTuneDisplay();
             showStatus(`Hora ajustada para ${val} (correção guardada)`, 'success');
             updateClock();
         }
@@ -308,10 +330,12 @@
                             local: a.local || '',
                             time: a.time || '12:00',
                             timeEnd: a.timeEnd || a.time || '13:00',
-                            hunted: !!a.hunted
+                            hunted: !!a.hunted,
+                            notify5min: !!a.notify5min
                         })) }];
                     } else if (data.huntTypes) {
                         huntTypes = data.huntTypes;
+                        huntTypes.forEach(ht => ht.animals.forEach(a => { if (a.notify5min === undefined) a.notify5min = false; }));
                     } else {
                         huntTypes = [{ name: 'Animais Lendários', animals: [] }];
                     }
@@ -321,10 +345,10 @@
                 huntTypes = [{
                     name: 'Animais Lendários',
                     animals: [
-                        { name: 'Urso Bharati', isco: '', xp: '', local: '', time: '02:15', timeEnd: '03:15', hunted: false },
-                        { name: 'Lobo Lendário', isco: '', xp: '', local: '', time: '04:45', timeEnd: '05:45', hunted: false },
-                        { name: 'Alce Lendário', isco: '', xp: '', local: '', time: '07:30', timeEnd: '08:30', hunted: false },
-                        { name: 'Pantera Lendária', isco: '', xp: '', local: '', time: '23:10', timeEnd: '00:10', hunted: false }
+                        { name: 'Urso Bharati', isco: '', xp: '', local: '', time: '02:15', timeEnd: '03:15', hunted: false, notify5min: false },
+                        { name: 'Lobo Lendário', isco: '', xp: '', local: '', time: '04:45', timeEnd: '05:45', hunted: false, notify5min: false },
+                        { name: 'Alce Lendário', isco: '', xp: '', local: '', time: '07:30', timeEnd: '08:30', hunted: false, notify5min: false },
+                        { name: 'Pantera Lendária', isco: '', xp: '', local: '', time: '23:10', timeEnd: '00:10', hunted: false, notify5min: false }
                     ]
                 }];
             }
@@ -389,6 +413,7 @@
                     <td><input type="time" value="${esc(animal.time)}" onchange="getCurrentAnimals()[${index}].time=this.value;saveAnimals();"></td>
                     <td><input type="time" value="${esc(animal.timeEnd)}" onchange="getCurrentAnimals()[${index}].timeEnd=this.value;saveAnimals();"></td>
                     <td><input type="checkbox" ${animal.hunted ? 'checked' : ''} onchange="getCurrentAnimals()[${index}].hunted=this.checked;saveAnimals();"></td>
+                    <td><input type="checkbox" ${animal.notify5min ? 'checked' : ''} title="Notificar no Discord 5 min antes" onchange="getCurrentAnimals()[${index}].notify5min=this.checked;saveAnimals();"></td>
                     <td><button class="delete-btn" onclick="getCurrentAnimals().splice(${index},1);saveAnimals();renderAlarmsTable();">X</button></td>
                 `;
                 tbody.appendChild(row);
@@ -409,7 +434,8 @@
                 name, isco, xp, local,
                 time: horaInicio,
                 timeEnd: horaFim,
-                hunted: false
+                hunted: false,
+                notify5min: false
             });
             saveAnimals();
             renderAlarmsTable();
@@ -580,22 +606,31 @@
             sendDiscordUpdate(`Teste: ${t} | Progresso: ${p}%`);
         };
 
-        document.getElementById('toggleAuto').onclick = function() {
-            if (autoUpdateId) {
-                clearInterval(autoUpdateId);
-                autoUpdateId = null;
-                this.textContent = 'Iniciar Auto-Update (60s)';
-                showStatus('Auto-update parado', 'error');
-            } else {
-                autoUpdateId = setInterval(updateClock, 60000);
-                this.textContent = 'Parar Auto-Update';
-                showStatus('Auto-update iniciado – envia para Discord a cada 60s', 'success');
-            }
+        document.getElementById('fineTuneMinus').onclick = () => {
+            fineTuneMinutes -= 1;
+            saveClockOffset();
+            updateFineTuneDisplay();
             updateClock();
+            showStatus('Ajuste fino: ' + (fineTuneMinutes >= 0 ? '+' : '') + fineTuneMinutes + ' min', 'success');
+        };
+        document.getElementById('fineTunePlus').onclick = () => {
+            fineTuneMinutes += 1;
+            saveClockOffset();
+            updateFineTuneDisplay();
+            updateClock();
+            showStatus('Ajuste fino: ' + (fineTuneMinutes >= 0 ? '+' : '') + fineTuneMinutes + ' min', 'success');
+        };
+        document.getElementById('fineTuneReset').onclick = () => {
+            fineTuneMinutes = 0;
+            saveClockOffset();
+            updateFineTuneDisplay();
+            updateClock();
+            showStatus('Ajuste fino resetado', 'success');
         };
 
         // Início – relógio sincronizado com UTC (00:00 UTC = 00:00 no jogo)
         loadClockOffset();
+        updateFineTuneDisplay();
         loadAnimals();
         Notification.requestPermission();
         setInterval(updateClock, 1000);
